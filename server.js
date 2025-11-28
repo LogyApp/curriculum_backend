@@ -905,10 +905,11 @@ app.post("/api/hv/registrar", async (req, res) => {
         [destName, signedUrl, identificacion]
       );
 
-      console.log("PDF generado exitosamente:", signedUrl);
+      console.log("✅ PDF generado exitosamente:", signedUrl);
     } catch (err) {
-      console.error("Error generando PDF:", err);
-      // No fallo crítico: puedes continuar; opcional: notificar
+      console.error("❌ Error generando PDF:", err);
+      // Asegurar que pdfUrl sea null explícitamente en caso de error
+      pdfUrl = null;
     }
 
     // MODIFICACIÓN: Devolver la URL del PDF en la respuesta
@@ -924,7 +925,8 @@ app.post("/api/hv/registrar", async (req, res) => {
     await conn.rollback();
     res.status(500).json({
       ok: false,
-      error: "Error registrando hoja de vida"
+      error: "Error registrando hoja de vida",
+      pdf_url: null
     });
   } finally {
     conn.release();
