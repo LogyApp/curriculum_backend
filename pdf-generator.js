@@ -76,40 +76,69 @@ async function htmlToPdfBuffer(html) {
   }
 }
 
-export async function generateAndUploadPdf({ identificacion, dataObjects = {}, destNamePrefix }) {
-  // Asegurar que LOGO_URL esté disponible en dataObjects — preferir valor pasado por caller
-  // if (!dataObjects.LOGO_URL) {
-  //    dataObjects.LOGO_URL = await getLogoDataUrl();
-  // }
-
-  // NO sobreescribir LOGO_URL; server.js ya manda la correcta
-    if (!dataObjects.LOGO_URL) {
-        dataObjects.LOGO_URL = "https://storage.googleapis.com/logyser-recibo-public/logo.png";
-    }
-
-
-  const templatePath = TEMPLATE_PATH;
-  const html = await renderHtmlFromTemplate(templatePath, dataObjects);
-  const pdfBuffer = await htmlToPdfBuffer(html);
-
-  const destName = `${identificacion}/${destNamePrefix || "cv"}_${Date.now()}.pdf`;
-  const file = bucket.file(destName);
-
-  await file.save(pdfBuffer, {
-    contentType: "application/pdf",
-    resumable: false
-  });
-
-  const expiresMs = parseInt(process.env.SIGNED_URL_EXPIRES_MS || String(7 * 24 * 60 * 60 * 1000), 10);
-  const expiresAt = Date.now() + expiresMs;
-  let signedUrl = null;
-  try {
-    const [url] = await file.getSignedUrl({ action: "read", expires: expiresAt });
-    signedUrl = url;
-  } catch (err) {
-    console.warn("pdf getSignedUrl falló:", err && err.message ? err.message : err);
-    signedUrl = `https://storage.googleapis.com/${GCS_BUCKET}/${destName}`;
+export async function generateAndUploadPdf({ identificacion, dataObjects = {}, destNamePrefix = "hoja_vida" }) {
+  // Asegurar que LOGO_URL esté disponible en dataObjects
+  if (!dataObjects.LOGO_URL) {
+    dataObjects.LOGO_URL = "https://storage.googleapis.com/logyser-recibo-public/logo.png";
   }
 
-  return { destName, signedUrl };
+  // Validaciones críticas
+  if (!identificacion) {
+    throw new Error("Identificación es requerida para generar PDF");
+  }
+
+  console.log("📄 Generando PDF para:", identificacion);
+
+  try {
+    const templatePath = TEMPLATE_PATH;
+
+    // Verificar que el template existe
+    try {
+      await fs.access(templatePath);
+    } catch (err) {
+      throw new Error(`Template no encontrado en: ${templatePath}`);
+    }
+
+    const html = await renderHtmlFromTemplate(templatePath, dataObjects);
+
+    if (!html || html.length === 0) {
+      throw new Error("HTML generado está vacío");
+    }
+
+    const pdfBuffer = await htmlToPdfBuffer(html);
+
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      throw new Error("Buffer PDF está vacío");
+    }
+
+    const destName = `${identificacion}/${destNamePrefix}_${Date.now()}.pdf`;
+    const file = bucket.file(destName);
+
+    console.log("☁️ Subiendo PDF a GCS:", destName);
+
+    await file.save(pdfBuffer, {
+      contentType: "application/pdf",
+      resumable: false
+    });
+
+    const expiresMs = parseInt(process.env.SIGNED_URL_EXPIRES_MS || String(7 * 24 * 60 * 60 * 1000), 10);
+    const expiresAt = Date.now() + expiresMs;
+
+    let signedUrl = null;
+    try {
+      const [url] = await file.getSignedUrl({ action: "read", expires: expiresAt });
+      signedUrl = url;
+      console.log("✅ Signed URL generada para PDF");
+    } catch (err) {
+      console.warn("⚠ getSignedUrl falló, usando URL pública:", err.message);
+      signedUrl = `https://storage.googleapis.com/${GCS_BUCKET}/${destName}`;
+    }
+
+    console.log("🎉 PDF generado y subido exitosamente:", signedUrl);
+    return { destName, signedUrl };
+
+  } catch (error) {
+    console.error("❌ Error en generateAndUploadPdf:", error.message);
+    throw error; // Re-lanzar el error para manejarlo en el caller
+  }
 }
