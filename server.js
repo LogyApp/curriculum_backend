@@ -67,6 +67,15 @@ const upload = multer({
 const GCS_BUCKET = process.env.GCS_BUCKET || "hojas_vida_logyser";
 const storageGcs = new Storage(); // usará credenciales por env/Workload Identity en GCP
 const bucket = storageGcs.bucket(GCS_BUCKET);
+
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    succes: true,
+    message: 'El servidor de encuentra activo'
+  })
+})
+
 // ==========================================
 //  ENDPOINT: Tipo de Identificación
 // ==========================================
@@ -385,6 +394,7 @@ app.post("/api/hv/registrar", async (req, res) => {
   } = datosAspirante;
 
   const conn = await pool.getConnection();
+  let pdfUrl = null; // Variable para almacenar la URL del PDF
 
   try {
     await conn.beginTransaction();
@@ -771,9 +781,9 @@ app.post("/api/hv/registrar", async (req, res) => {
 
     await conn.commit();
 
+    // GENERACIÓN DEL PDF - FUERA DEL TRY/CATCH INTERNO PARA PODER CAPTURAR LA URL
     try {
       // preparar dataObjects a partir de lo que acabas de insertar/actualizar
-      // --- Construir HTML para listas (insertar en server.js justo antes de llamar generateAndUploadPdf) ---
       function toHtmlList(items, renderer) {
         if (!Array.isArray(items) || items.length === 0) return "<div class='small'>No registrado</div>";
         return items.map((it, i) => `<div class="list-item"><strong>${i + 1}.</strong> ${renderer(it)}</div>`).join("");
@@ -832,7 +842,6 @@ app.post("/api/hv/registrar", async (req, res) => {
       }
 
       // Construir dataObjects para la plantilla
-      // --- Construir dataObjects para la plantilla (reemplazar el aspiranteData actual) ---
       const aspiranteData = {
         NOMBRE_COMPLETO: `${escapeHtml(primer_nombre || "")} ${escapeHtml(primer_apellido || "")}`.trim(),
         TIPO_ID: escapeHtml(tipo_documento || ""),
@@ -887,21 +896,29 @@ app.post("/api/hv/registrar", async (req, res) => {
 
       const { destName, signedUrl } = await generateAndUploadPdf({ identificacion, dataObjects: aspiranteData });
 
+      // GUARDAR LA URL DEL PDF PARA DEVOLVERLA EN LA RESPUESTA
+      pdfUrl = signedUrl;
+
       // Actualizar DB con referencia al PDF
       await conn.query(
         `UPDATE Dynamic_hv_aspirante SET pdf_gcs_path = ?, pdf_public_url = ? WHERE identificacion = ?`,
         [destName, signedUrl, identificacion]
       );
+
+      console.log("PDF generado exitosamente:", signedUrl);
     } catch (err) {
       console.error("Error generando PDF:", err);
-      // no fallo crítico: puedes continuar; opcional: notificar
+      // No fallo crítico: puedes continuar; opcional: notificar
     }
 
+    // MODIFICACIÓN: Devolver la URL del PDF en la respuesta
     res.json({
       ok: true,
       message: "Hoja de vida registrada correctamente",
-      id_aspirante: idAspirante
+      id_aspirante: idAspirante,
+      pdf_url: pdfUrl // ← AGREGAR ESTA LÍNEA
     });
+
   } catch (error) {
     console.error("Error registrando HV:", error);
     await conn.rollback();
@@ -912,7 +929,6 @@ app.post("/api/hv/registrar", async (req, res) => {
   } finally {
     conn.release();
   }
-
 });
 
 app.use("/api/correo", correoAspiranteRoutes);
