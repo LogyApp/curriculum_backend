@@ -69,7 +69,7 @@ const storageGcs = new Storage(); // usará credenciales por env/Workload Identi
 const bucket = storageGcs.bucket(GCS_BUCKET);
 
 
-app.get('/api/health', (req, res) => {
+app.get('/', (req, res) => {
   res.status(200).json({
     succes: true,
     message: 'El servidor de encuentra activo'
