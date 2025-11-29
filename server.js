@@ -932,7 +932,26 @@ app.post("/api/hv/registrar", async (req, res) => {
         ? `${escapeHtml(contacto_emergencia.nombre_completo)} • ${escapeHtml(contacto_emergencia.telefono || "")} • ${escapeHtml(contacto_emergencia.correo_electronico || "")}`
         : "";
 
-      // Construir dataObjects
+      // Construir METAS_HTML enumerada (mantiene compatibilidad con meta_* o corto_plazo)
+      const metasObj = metas_personales || {};
+      const metasItems = [];
+      const m1 = metasObj.meta_corto_plazo || metasObj.corto_plazo || "";
+      const m2 = metasObj.meta_mediano_plazo || metasObj.mediano_plazo || "";
+      const m3 = metasObj.meta_largo_plazo || metasObj.largo_plazo || "";
+      if (m1 && m1.trim()) metasItems.push(m1.trim());
+      if (m2 && m2.trim()) metasItems.push(m2.trim());
+      if (m3 && m3.trim()) metasItems.push(m3.trim());
+
+      let METAS_HTML;
+      if (metasItems.length === 0) {
+        METAS_HTML = "<div class='small'>No registrado</div>";
+      } else {
+        METAS_HTML = metasItems.map((txt, i) =>
+          `<div class="list-item"><strong>${i + 1}.</strong> ${escapeHtml(txt)}</div>`
+        ).join("");
+      }
+
+      // Construir dataObjects CORREGIDO
       const aspiranteData = {
         NOMBRE_COMPLETO: `${escapeHtml(primer_nombre || "")} ${escapeHtml(primer_apellido || "")}`.trim(),
         TIPO_ID: escapeHtml(tipo_documento || ""),
@@ -955,11 +974,10 @@ app.post("/api/hv/registrar", async (req, res) => {
         REFERENCIAS_LIST,
         FAMILIARES_LIST,
         CONTACTO_EMERGENCIA: CONTACTO_HTML,
-        METAS: "METAS_HTML", // Simplificado para prueba
+        METAS: METAS_HTML, // ← ¡CORREGIDO! Usa la variable, no el string
         FECHA_GENERACION: new Date().toLocaleString(),
         LOGO_URL: process.env.LOGO_PUBLIC_URL || "https://storage.googleapis.com/logyser-recibo-public/logo.png"
       };
-
       console.log("✅ Datos preparados para PDF. Generando...");
 
       const { destName, signedUrl } = await generateAndUploadPdf({
