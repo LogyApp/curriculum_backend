@@ -70,11 +70,118 @@ const bucket = storageGcs.bucket(GCS_BUCKET);
 
 
 app.get('/', (req, res) => {
-  res.status(200).json({
-    succes: true,
-    message: 'El servidor de encuentra activo'
-  })
-})
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Servidor Activo - Logyser</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #000b59 0%, #1c2a80 50%, #000b59 100%);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 50px 40px;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 90%;
+            color: #333;
+        }
+        .logo {
+            width: 180px;
+            margin-bottom: 30px;
+            filter: brightness(0) invert(0);
+        }
+        .status-card {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+            padding: 30px;
+            border-radius: 16px;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(76, 175, 80, 0.3);
+        }
+        .check-icon {
+            font-size: 64px;
+            margin-bottom: 15px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.2em;
+            font-weight: 700;
+        }
+        .status {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .message {
+            font-size: 1.1em;
+            opacity: 0.9;
+            margin: 0;
+        }
+        .info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 25px;
+            border-left: 4px solid #000b59;
+        }
+        .info h3 {
+            margin: 0 0 10px 0;
+            color: #000b59;
+            font-size: 1.1em;
+        }
+        .info p {
+            margin: 0;
+            color: #666;
+            font-size: 0.95em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="https://storage.googleapis.com/logyser-recibo-public/logo.png" alt="Logo Logyser" class="logo">
+        
+        <div class="status-card">
+            <div class="check-icon">✅</div>
+            <h1>Servidor Activo</h1>
+            <div class="status">Estado: Operacional</div>
+            <p class="message">El servidor de Logyser funciona correctamente</p>
+        </div>
+        
+        <div class="info">
+            <h3>📊 Información del Sistema</h3>
+            <p>• Servicio: API Hojas de Vida</p>
+            <p>• Estado: ✅ En línea</p>
+            <p>• Tiempo: ${new Date().toLocaleString('es-CO')}</p>
+        </div>
+    </div>
+</body>
+</html>
+  `;
+
+  res.status(200).send(html);
+});
 
 // ==========================================
 //  ENDPOINT: Tipo de Identificación
