@@ -889,51 +889,31 @@ app.post("/api/hv/registrar", async (req, res) => {
 
     await conn.commit();
 
-    // GENERACIÓN DEL PDF - CON MEJOR MANEJO DE ERRORES
+    // =============================================
+    // GENERACIÓN DEL PDF - VERSIÓN FUNCIONAL
+    // =============================================
+    console.log("🎯 INICIANDO GENERACIÓN PDF");
+    let pdfUrl = null;
+
     try {
-      console.log("📋 Iniciando generación de PDF para:", identificacion);
-
-      // Validar datos críticos antes de generar PDF
-      if (!identificacion || !primer_nombre || !primer_apellido) {
-        throw new Error("Datos insuficientes para generar PDF");
-      }
-
-      // preparar dataObjects (tu código existente)
+      // 1. PREPARAR DATOS COMPLETOS
       function toHtmlList(items, renderer) {
         if (!Array.isArray(items) || items.length === 0) return "<div class='small'>No registrado</div>";
         return items.map((it, i) => `<div class=\"list-item\"><strong>${i + 1}.</strong> ${renderer(it)}</div>`).join("");
       }
 
-      const EDUCACION_LIST = toHtmlList(
-        educacion,
-        e => `${escapeHtml(e.institucion || "")} — ${escapeHtml(e.programa || "")} (${escapeHtml(e.modalidad || "-")}) ${e.ano ? `• ${escapeHtml(String(e.ano))}` : ""}`
-      );
-
-      const EXPERIENCIA_LIST = toHtmlList(
-        experiencia_laboral,
-        ex => `${escapeHtml(ex.empresa || "")} — ${escapeHtml(ex.cargo || "")}<br><span class=\"small\">${escapeHtml(ex.tiempo_laborado || "")} • ${escapeHtml(ex.funciones || "")}</span>`
-      );
-
-      const REFERENCIAS_LIST = toHtmlList(
-        referencias,
-        r => {
-          if ((r.tipo_referencia || "").toLowerCase().includes("laboral")) {
-            return `${escapeHtml(r.empresa || "")} — ${escapeHtml(r.jefe_inmediato || "")} (${escapeHtml(r.telefono || "")})`;
-          }
-          return `${escapeHtml(r.nombre_completo || "")} — ${escapeHtml(r.telefono || "")} ${escapeHtml(r.ocupacion || "") ? "• " + escapeHtml(r.ocupacion) : ""}`;
+      const EDUCACION_LIST = toHtmlList(educacion, e => `${escapeHtml(e.institucion || "")} — ${escapeHtml(e.programa || "")} (${escapeHtml(e.modalidad || "-")}) ${e.ano ? `• ${escapeHtml(String(e.ano))}` : ""}`);
+      const EXPERIENCIA_LIST = toHtmlList(experiencia_laboral, ex => `${escapeHtml(ex.empresa || "")} — ${escapeHtml(ex.cargo || "")}<br><span class=\"small\">${escapeHtml(ex.tiempo_laborado || "")} • ${escapeHtml(ex.funciones || "")}</span>`);
+      const REFERENCIAS_LIST = toHtmlList(referencias, r => {
+        if ((r.tipo_referencia || "").toLowerCase().includes("laboral")) {
+          return `${escapeHtml(r.empresa || "")} — ${escapeHtml(r.jefe_inmediato || "")} (${escapeHtml(r.telefono || "")})`;
         }
-      );
+        return `${escapeHtml(r.nombre_completo || "")} — ${escapeHtml(r.telefono || "")} ${escapeHtml(r.ocupacion || "") ? "• " + escapeHtml(r.ocupacion) : ""}`;
+      });
+      const FAMILIARES_LIST = toHtmlList(familiares, f => `${escapeHtml(f.nombre_completo || "")} — ${escapeHtml(f.parentesco || "")} • ${escapeHtml(String(f.edad || ""))}`);
+      const CONTACTO_HTML = contacto_emergencia && contacto_emergencia.nombre_completo ? `${escapeHtml(contacto_emergencia.nombre_completo)} • ${escapeHtml(contacto_emergencia.telefono || "")} • ${escapeHtml(contacto_emergencia.correo_electronico || "")}` : "";
 
-      const FAMILIARES_LIST = toHtmlList(
-        familiares,
-        f => `${escapeHtml(f.nombre_completo || "")} — ${escapeHtml(f.parentesco || "")} • ${escapeHtml(String(f.edad || ""))}`
-      );
-
-      const CONTACTO_HTML = contacto_emergencia && contacto_emergencia.nombre_completo
-        ? `${escapeHtml(contacto_emergencia.nombre_completo)} • ${escapeHtml(contacto_emergencia.telefono || "")} • ${escapeHtml(contacto_emergencia.correo_electronico || "")}`
-        : "";
-
-      // Construir METAS_HTML enumerada (mantiene compatibilidad con meta_* o corto_plazo)
+      // Metas
       const metasObj = metas_personales || {};
       const metasItems = [];
       const m1 = metasObj.meta_corto_plazo || metasObj.corto_plazo || "";
@@ -947,20 +927,18 @@ app.post("/api/hv/registrar", async (req, res) => {
       if (metasItems.length === 0) {
         METAS_HTML = "<div class='small'>No registrado</div>";
       } else {
-        METAS_HTML = metasItems.map((txt, i) =>
-          `<div class="list-item"><strong>${i + 1}.</strong> ${escapeHtml(txt)}</div>`
-        ).join("");
+        METAS_HTML = metasItems.map((txt, i) => `<div class="list-item"><strong>${i + 1}.</strong> ${escapeHtml(txt)}</div>`).join("");
       }
 
-      // Construir dataObjects CORREGIDO
+      // 2. CONSTRUIR DATAOBJECTS COMPLETO
       const aspiranteData = {
         NOMBRE_COMPLETO: `${escapeHtml(primer_nombre || "")} ${escapeHtml(primer_apellido || "")}`.trim(),
         TIPO_ID: escapeHtml(tipo_documento || ""),
         IDENTIFICACION: escapeHtml(identificacion || ""),
-        CIUDAD_RESIDENCIA: escapeHtml(ciudad_residencia || datosAspirante.ciudad || ""),
-        TELEFONO: escapeHtml(telefono || datosAspirante.telefono || ""),
-        CORREO: escapeHtml(correo_electronico || datosAspirante.correo_electronico || ""),
-        DIRECCION: escapeHtml(direccion_barrio || datosAspirante.direccion_barrio || ""),
+        CIUDAD_RESIDENCIA: escapeHtml(ciudad_residencia || ""),
+        TELEFONO: escapeHtml(telefono || ""),
+        CORREO: escapeHtml(correo_electronico || ""),
+        DIRECCION: escapeHtml(direccion_barrio || ""),
         FECHA_NACIMIENTO: escapeHtml(fecha_nacimiento || ""),
         ESTADO_CIVIL: escapeHtml(estado_civil || ""),
         EPS: escapeHtml(eps || ""),
@@ -975,70 +953,40 @@ app.post("/api/hv/registrar", async (req, res) => {
         REFERENCIAS_LIST,
         FAMILIARES_LIST,
         CONTACTO_EMERGENCIA: CONTACTO_HTML,
-        METAS: METAS_HTML, // ← ¡CORREGIDO! Usa la variable, no el string
+        METAS: METAS_HTML,
         FECHA_GENERACION: new Date().toLocaleString(),
-        LOGO_URL: process.env.LOGO_PUBLIC_URL || "https://storage.googleapis.com/logyser-recibo-public/logo.png"
+        LOGO_URL: "https://storage.googleapis.com/logyser-recibo-public/logo.png"
       };
-      console.log("✅ Datos preparados para PDF. Generando...");
 
+      console.log("✅ Datos preparados, llamando a generateAndUploadPdf...");
+
+      // 3. LLAMAR A LA FUNCIÓN
       const { destName, signedUrl } = await generateAndUploadPdf({
         identificacion,
         dataObjects: aspiranteData
       });
 
-      // GUARDAR LA URL DEL PDF
       pdfUrl = signedUrl;
 
-      // Actualizar DB con referencia al PDF
+      // 4. GUARDAR EN DB
       await conn.query(
         `UPDATE Dynamic_hv_aspirante SET pdf_gcs_path = ?, pdf_public_url = ? WHERE identificacion = ?`,
         [destName, signedUrl, identificacion]
       );
 
-      console.log("✅ PDF generado exitosamente:", signedUrl);
+      console.log("🎉 PDF GENERADO EXITOSAMENTE:", pdfUrl);
 
-    } catch (pdfError) {
-      console.error("❌ Error CRÍTICO generando PDF:", pdfError);
-      console.error("❌ Stack:", pdfError.stack);
-
-      // Intentar generación mínima como fallback
-      try {
-        console.log("🔄 Intentando generación mínima de PDF...");
-
-        const datosMinimos = {
-          NOMBRE_COMPLETO: `${primer_nombre} ${primer_apellido}`.trim(),
-          IDENTIFICACION: identificacion,
-          FECHA_GENERACION: new Date().toLocaleString(),
-          LOGO_URL: "https://storage.googleapis.com/logyser-recibo-public/logo.png"
-        };
-
-        const { destName, signedUrl } = await generateAndUploadPdf({
-          identificacion,
-          dataObjects: datosMinimos,
-          destNamePrefix: "cv_minimo"
-        });
-
-        pdfUrl = signedUrl;
-
-        await conn.query(
-          `UPDATE Dynamic_hv_aspirante SET pdf_gcs_path = ?, pdf_public_url = ? WHERE identificacion = ?`,
-          [destName, signedUrl, identificacion]
-        );
-
-        console.log("✅ PDF mínimo generado como fallback:", signedUrl);
-
-      } catch (fallbackError) {
-        console.error("❌ Fallback también falló:", fallbackError);
-        pdfUrl = null;
-      }
+    } catch (error) {
+      console.error("❌ ERROR generando PDF:", error.message);
+      pdfUrl = null;
     }
 
-    // MODIFICACIÓN: Devolver la URL del PDF en la respuesta
+    // 5. RESPONDER AL FRONTEND
     res.json({
       ok: true,
       message: "Hoja de vida registrada correctamente",
       id_aspirante: idAspirante,
-      pdf_url: pdfUrl // ← AGREGAR ESTA LÍNEA
+      pdf_url: pdfUrl
     });
 
   } catch (error) {
