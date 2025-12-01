@@ -363,4 +363,4 @@ async function generateAndUploadPdf({ identificacion, dataObjects = {} }) {
   }
 }
 
-export default { generateAndUploadPdf };
+export { generateAndUploadPdf };
