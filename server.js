@@ -502,13 +502,135 @@ app.post("/api/hv/registrar", async (req, res) => {
   } = datosAspirante;
 
   const conn = await pool.getConnection();
-  let pdfUrl = null; // Variable para almacenar la URL del PDF
+  let pdfUrl = null;
+  let pdfGcsPath = null;
+  let idAspirante = null;
 
   try {
     await conn.beginTransaction();
 
-    // Verificar si ya existe aspirante con esta identificación
-    let idAspirante = null;
+    console.log("🔍 Iniciando registro de HV para:", identificacion);
+
+    // 1. PREPARAR DATOS PARA EL PDF (ANTES DE CUALQUIER COMMIT)
+    console.log("📋 Preparando datos para PDF...");
+
+    function toHtmlList(items, renderer) {
+      if (!Array.isArray(items) || items.length === 0) return "<div class='small'>No registrado</div>";
+      return items.map((it, i) => `<div class=\"list-item\"><strong>${i + 1}.</strong> ${renderer(it)}</div>`).join("");
+    }
+
+    const EDUCACION_LIST = toHtmlList(educacion, e => `${escapeHtml(e.institucion || "")} — ${escapeHtml(e.programa || "")} (${escapeHtml(e.modalidad || "-")}) ${e.ano ? `• ${escapeHtml(String(e.ano))}` : ""}`);
+    const EXPERIENCIA_LIST = toHtmlList(experiencia_laboral, ex => `${escapeHtml(ex.empresa || "")} — ${escapeHtml(ex.cargo || "")}<br><span class=\"small\">${escapeHtml(ex.tiempo_laborado || "")} • ${escapeHtml(ex.funciones || "")}</span>`);
+    const REFERENCIAS_LIST = toHtmlList(referencias, r => {
+      if ((r.tipo_referencia || "").toLowerCase().includes("laboral")) {
+        return `${escapeHtml(r.empresa || "")} — ${escapeHtml(r.jefe_inmediato || "")} (${escapeHtml(r.telefono || "")})`;
+      }
+      return `${escapeHtml(r.nombre_completo || "")} — ${escapeHtml(r.telefono || "")} ${escapeHtml(r.ocupacion || "") ? "• " + escapeHtml(r.ocupacion) : ""}`;
+    });
+    const FAMILIARES_LIST = toHtmlList(familiares, f => `${escapeHtml(f.nombre_completo || "")} — ${escapeHtml(f.parentesco || "")} • ${escapeHtml(String(f.edad || ""))}`);
+    const CONTACTO_HTML = contacto_emergencia && contacto_emergencia.nombre_completo ?
+      `${escapeHtml(contacto_emergencia.nombre_completo)} • ${escapeHtml(contacto_emergencia.telefono || "")} • ${escapeHtml(contacto_emergencia.correo_electronico || "")}` :
+      "No registrado";
+
+    // Metas
+    const metasObj = metas_personales || {};
+    const m1 = metasObj.meta_corto_plazo || metasObj.corto_plazo || "";
+    const m2 = metasObj.meta_mediano_plazo || metasObj.mediano_plazo || "";
+    const m3 = metasObj.meta_largo_plazo || metasObj.largo_plazo || "";
+
+    let METAS_HTML;
+    if (m1 || m2 || m3) {
+      const metasItems = [];
+      if (m1.trim()) metasItems.push(m1.trim());
+      if (m2.trim()) metasItems.push(m2.trim());
+      if (m3.trim()) metasItems.push(m3.trim());
+      METAS_HTML = metasItems.map((txt, i) => `<div class="list-item"><strong>${i + 1}.</strong> ${escapeHtml(txt)}</div>`).join("");
+    } else {
+      METAS_HTML = "<div class='small'>No registrado</div>";
+    }
+
+    // Datos de seguridad para el PDF
+    const SEG_LLAMADOS = seguridad?.llamados_atencion || "No";
+    const SEG_DETALLE_LLAMADOS = escapeHtml(seguridad?.detalle_llamados || "");
+    const SEG_ACCIDENTE = seguridad?.accidente_laboral || "No";
+    const SEG_DETALLE_ACCIDENTE = escapeHtml(seguridad?.detalle_accidente || "");
+    const SEG_ENFERMEDAD = seguridad?.enfermedad_importante || "No";
+    const SEG_DETALLE_ENFERMEDAD = escapeHtml(seguridad?.detalle_enfermedad || "");
+    const SEG_ALCOHOL = seguridad?.consume_alcohol || "No";
+    const SEG_FRECUENCIA = escapeHtml(seguridad?.frecuencia_alcohol || "");
+    const SEG_FAMILIAR = seguridad?.familiar_en_empresa || "No";
+    const SEG_DETALLE_FAMILIAR = escapeHtml(seguridad?.detalle_familiar_empresa || "");
+    const SEG_INFO_FALSA = seguridad?.info_falsa || "No";
+    const SEG_POLIGRAFO = seguridad?.acepta_poligrafo || "No";
+    const SEG_FORTALEZAS = escapeHtml(seguridad?.fortalezas || "");
+    const SEG_MEJORAR = escapeHtml(seguridad?.aspectos_mejorar || "");
+    const SEG_RESOLUCION = escapeHtml(seguridad?.resolucion_problemas || "");
+    const SEG_OBSERVACIONES = escapeHtml(seguridad?.observaciones || "");
+
+    // 2. GENERAR PDF PRIMERO (PARA TENER LA URL PARA GUARDAR)
+    console.log("🎯 Generando PDF...");
+    try {
+      const aspiranteData = {
+        NOMBRE_COMPLETO: `${escapeHtml(primer_nombre || "")} ${escapeHtml(primer_apellido || "")}`.trim(),
+        TIPO_ID: escapeHtml(tipo_documento || ""),
+        IDENTIFICACION: escapeHtml(identificacion || ""),
+        CIUDAD_RESIDENCIA: escapeHtml(ciudad_residencia || ""),
+        TELEFONO: escapeHtml(telefono || ""),
+        CORREO: escapeHtml(correo_electronico || ""),
+        DIRECCION: escapeHtml(direccion_barrio || ""),
+        FECHA_NACIMIENTO: escapeHtml(fecha_nacimiento || ""),
+        ESTADO_CIVIL: escapeHtml(estado_civil || ""),
+        EPS: escapeHtml(eps || ""),
+        AFP: escapeHtml(afp || ""),
+        RH: escapeHtml(rh || ""),
+        CAMISA_TALLA: escapeHtml(camisa_talla || ""),
+        TALLA_PANTALON: escapeHtml(talla_pantalon || ""),
+        ZAPATOS_TALLA: escapeHtml(zapatos_talla || ""),
+        PHOTO_URL: datosAspirante.foto_public_url || "",
+        EDUCACION_LIST,
+        EXPERIENCIA_LIST,
+        REFERENCIAS_LIST,
+        FAMILIARES_LIST,
+        CONTACTO_EMERGENCIA: CONTACTO_HTML,
+        METAS: METAS_HTML,
+        FECHA_GENERACION: new Date().toLocaleString(),
+        LOGO_URL: "https://storage.googleapis.com/logyser-recibo-public/logo.png",
+        // Campos de seguridad
+        SEG_LLAMADOS,
+        SEG_DETALLE_LLAMADOS,
+        SEG_ACCIDENTE,
+        SEG_DETALLE_ACCIDENTE,
+        SEG_ENFERMEDAD,
+        SEG_DETALLE_ENFERMEDAD,
+        SEG_ALCOHOL,
+        SEG_FRECUENCIA,
+        SEG_FAMILIAR,
+        SEG_DETALLE_FAMILIAR,
+        SEG_INFO_FALSA,
+        SEG_POLIGRAFO,
+        SEG_FORTALEZAS,
+        SEG_MEJORAR,
+        SEG_RESOLUCION,
+        SEG_OBSERVACIONES
+      };
+
+      const { destName, signedUrl } = await generateAndUploadPdf({
+        identificacion,
+        dataObjects: aspiranteData
+      });
+
+      pdfUrl = signedUrl;
+      pdfGcsPath = destName;
+      console.log("✅ PDF generado exitosamente:", pdfUrl);
+
+    } catch (pdfError) {
+      console.error("❌ ERROR generando PDF:", pdfError.message);
+      // Continuamos sin PDF, pero marcamos el error
+      pdfUrl = null;
+      pdfGcsPath = null;
+    }
+
+    // 3. VERIFICAR SI YA EXISTE ASPIRANTE
     if (identificacion) {
       const [existingRows] = await conn.query(
         `SELECT id_aspirante FROM Dynamic_hv_aspirante WHERE identificacion = ? LIMIT 1`,
@@ -519,8 +641,10 @@ app.post("/api/hv/registrar", async (req, res) => {
       }
     }
 
+    // 4. INSERTAR O ACTUALIZAR ASPIRANTE CON LA URL DEL PDF
     if (idAspirante) {
-      // --- Caso: ya existe -> hacemos UPDATE y reinsertamos hijos ---
+      // --- Caso: ya existe -> UPDATE ---
+      console.log("🔄 Actualizando aspirante existente:", idAspirante);
       await conn.query(
         `
         UPDATE Dynamic_hv_aspirante SET
@@ -536,8 +660,8 @@ app.post("/api/hv/registrar", async (req, res) => {
           fecha_expedicion = ?,
           estado_civil = ?,
           direccion_barrio = ?,
-          departamento = ?,       -- se usa la columna 'departamento' para departamento_residencia
-          ciudad = ?,            -- se usa la columna 'ciudad' para ciudad_residencia
+          departamento = ?,
+          ciudad = ?,
           telefono = ?,
           correo_electronico = ?,
           eps = ?,
@@ -548,6 +672,8 @@ app.post("/api/hv/registrar", async (req, res) => {
           zapatos_talla = ?,
           foto_gcs_path = ?,
           foto_public_url = ?,
+          pdf_gcs_path = ?,
+          pdf_public_url = ?,
           origen_registro = ?,
           medio_reclutamiento = ?,
           recomendador_aspirante = ?,
@@ -579,6 +705,8 @@ app.post("/api/hv/registrar", async (req, res) => {
           zapatos_talla || null,
           datosAspirante.foto_gcs_path || null,
           datosAspirante.foto_public_url || null,
+          pdfGcsPath,
+          pdfUrl,
           origen_registro || "WEB",
           medio_reclutamiento || null,
           recomendador_aspirante || null,
@@ -586,7 +714,7 @@ app.post("/api/hv/registrar", async (req, res) => {
         ]
       );
 
-      // Borrar datos hijos existentes para ese aspirante (los volveremos a insertar)
+      // Borrar datos hijos existentes
       await conn.query(`DELETE FROM Dynamic_hv_educacion WHERE id_aspirante = ?`, [idAspirante]);
       await conn.query(`DELETE FROM Dynamic_hv_experiencia_laboral WHERE id_aspirante = ?`, [idAspirante]);
       await conn.query(`DELETE FROM Dynamic_hv_familiares WHERE id_aspirante = ?`, [idAspirante]);
@@ -596,7 +724,8 @@ app.post("/api/hv/registrar", async (req, res) => {
       await conn.query(`DELETE FROM Dynamic_hv_seguridad WHERE id_aspirante = ?`, [idAspirante]);
 
     } else {
-      // --- Caso: no existe -> insertar nuevo aspirante ---
+      // --- Caso: no existe -> INSERT nuevo aspirante ---
+      console.log("🆕 Insertando nuevo aspirante");
       const [aspiranteResult] = await conn.query(
         `
         INSERT INTO Dynamic_hv_aspirante (
@@ -625,12 +754,14 @@ app.post("/api/hv/registrar", async (req, res) => {
           zapatos_talla,
           foto_gcs_path,
           foto_public_url,
+          pdf_gcs_path,
+          pdf_public_url,
           origen_registro,
           medio_reclutamiento,
           recomendador_aspirante,
           fecha_registro
         )
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, NOW())
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, NOW())
         `,
         [
           tipo_documento || null,
@@ -658,347 +789,151 @@ app.post("/api/hv/registrar", async (req, res) => {
           zapatos_talla || null,
           datosAspirante.foto_gcs_path || null,
           datosAspirante.foto_public_url || null,
+          pdfGcsPath,
+          pdfUrl,
           origen_registro || "WEB",
           medio_reclutamiento || null,
           recomendador_aspirante || null
         ]
       );
 
-      // Obtener id mediante la identificación (garantiza compatibilidad con estructura actual)
       const [rowId] = await conn.query(
         `SELECT id_aspirante FROM Dynamic_hv_aspirante WHERE identificacion = ? ORDER BY fecha_registro DESC LIMIT 1`,
         [identificacion]
       );
-      idAspirante = rowId && rowId[0] ? rowId[0].id_aspirante : null;
+      idAspirante = rowId && rowId[0] ? rowId[0].id_aspirante : aspiranteResult.insertId;
     }
 
     if (!idAspirante) {
       throw new Error("No se pudo obtener id_aspirante después de insert/update");
     }
 
-    // 2) Educación (Dynamic_hv_educacion)
+    console.log("✅ Aspirante registrado con ID:", idAspirante);
+
+    // 5. INSERTAR DATOS HIJOS
+    // Educación
     for (const edu of educacion) {
       if (!edu.institucion && !edu.programa) continue;
-
       await conn.query(
-        `
-        INSERT INTO Dynamic_hv_educacion (
-          id_aspirante,
-          institucion,
-          programa,
-          nivel_escolaridad,
-          modalidad,
-          ano,
-          finalizado
-        )
-        VALUES (?,?,?,?,?,?,?)
-        `,
-        [
-          idAspirante,
-          edu.institucion || null,
-          edu.programa || null,
-          edu.nivel_escolaridad || null,
-          edu.modalidad || null,
-          edu.ano || null,
-          edu.finalizado || null
-        ]
+        `INSERT INTO Dynamic_hv_educacion (id_aspirante, institucion, programa, nivel_escolaridad, modalidad, ano, finalizado)
+         VALUES (?,?,?,?,?,?,?)`,
+        [idAspirante, edu.institucion, edu.programa, edu.nivel_escolaridad, edu.modalidad, edu.ano, edu.finalizado]
       );
     }
 
-    // 3) Experiencia laboral (Dynamic_hv_experiencia_laboral)
+    // Experiencia laboral
     for (const exp of experiencia_laboral) {
       if (!exp.empresa && !exp.cargo) continue;
-
       await conn.query(
-        `
-        INSERT INTO Dynamic_hv_experiencia_laboral (
-          id_aspirante,
-          empresa,
-          cargo,
-          tiempo_laborado,
-          salario,
-          motivo_retiro,
-          funciones
-        )
-        VALUES (?,?,?,?,?,?,?)
-        `,
-        [
-          idAspirante,
-          exp.empresa || null,
-          exp.cargo || null,
-          exp.tiempo_laborado || null,
-          exp.salario || null,
-          exp.motivo_retiro || null,
-          exp.funciones || null
-        ]
+        `INSERT INTO Dynamic_hv_experiencia_laboral (id_aspirante, empresa, cargo, tiempo_laborado, salario, motivo_retiro, funciones)
+         VALUES (?,?,?,?,?,?,?)`,
+        [idAspirante, exp.empresa, exp.cargo, exp.tiempo_laborado, exp.salario, exp.motivo_retiro, exp.funciones]
       );
     }
 
-    // 4) Familiares (Dynamic_hv_familiares)
+    // Familiares
     for (const fam of familiares) {
       if (!fam.nombre_completo) continue;
-
       await conn.query(
-        `
-        INSERT INTO Dynamic_hv_familiares (
-          id_aspirante,
-          nombre_completo,
-          parentesco,
-          edad,
-          ocupacion,
-          conviven_juntos
-        )
-        VALUES (?,?,?,?,?,?)
-        `,
-        [
-          idAspirante,
-          fam.nombre_completo || null,
-          fam.parentesco || null,
-          fam.edad || null,
-          fam.ocupacion || null,
-          fam.conviven_juntos || null
-        ]
+        `INSERT INTO Dynamic_hv_familiares (id_aspirante, nombre_completo, parentesco, edad, ocupacion, conviven_juntos)
+         VALUES (?,?,?,?,?,?)`,
+        [idAspirante, fam.nombre_completo, fam.parentesco, fam.edad, fam.ocupacion, fam.conviven_juntos]
       );
     }
 
-    // 5) Referencias (Dynamic_hv_referencias)
+    // Referencias
     for (const ref of referencias) {
       if (!ref.tipo_referencia) continue;
-
       await conn.query(
-        `
-        INSERT INTO Dynamic_hv_referencias (
-        id_aspirante,
-        tipo_referencia,
-        empresa,
-        jefe_inmediato,
-        cargo_jefe,
-        nombre_completo,
-        telefono,
-        ocupacion
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          idAspirante,
-          ref.tipo_referencia,
-          ref.empresa || null,
-          ref.jefe_inmediato || null,
-          ref.cargo_jefe || null,
-          ref.nombre_completo || null,
-          ref.telefono || null,
-          ref.ocupacion || null
-        ]
+        `INSERT INTO Dynamic_hv_referencias (id_aspirante, tipo_referencia, empresa, jefe_inmediato, cargo_jefe, nombre_completo, telefono, ocupacion)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [idAspirante, ref.tipo_referencia, ref.empresa, ref.jefe_inmediato, ref.cargo_jefe, ref.nombre_completo, ref.telefono, ref.ocupacion]
       );
     }
 
-    // 6) Contacto de emergencia (Dynamic_hv_contacto_emergencia)
+    // Contacto de emergencia
     if (contacto_emergencia && contacto_emergencia.nombre_completo) {
       await conn.query(
-        `
-        INSERT INTO Dynamic_hv_contacto_emergencia (
-          id_aspirante,
-          nombre_completo,
-          parentesco,
-          telefono,
-          correo_electronico,
-          direccion
-        )
-        VALUES (?,?,?,?,?,?)
-        `,
-        [
-          idAspirante,
-          contacto_emergencia.nombre_completo || null,
-          contacto_emergencia.parentesco || null,
-          contacto_emergencia.telefono || null,
-          contacto_emergencia.correo_electronico || null,
-          contacto_emergencia.direccion || null
-        ]
+        `INSERT INTO Dynamic_hv_contacto_emergencia (id_aspirante, nombre_completo, parentesco, telefono, correo_electronico, direccion)
+         VALUES (?,?,?,?,?,?)`,
+        [idAspirante, contacto_emergencia.nombre_completo, contacto_emergencia.parentesco,
+          contacto_emergencia.telefono, contacto_emergencia.correo_electronico, contacto_emergencia.direccion]
       );
     }
 
-    // 7) Metas personales (Dynamic_hv_metas_personales)
+    // Metas personales
     if (metas_personales) {
       await conn.query(
-        `
-        INSERT INTO Dynamic_hv_metas_personales (
-          id_aspirante,
-          meta_corto_plazo,
-          meta_mediano_plazo,
-          meta_largo_plazo
-        )
-        VALUES (?, ?, ?, ?)
-        `,
-        [
-          idAspirante,
-          metas_personales.corto_plazo || null,
-          metas_personales.mediano_plazo || null,
-          metas_personales.largo_plazo || null
-        ]
+        `INSERT INTO Dynamic_hv_metas_personales (id_aspirante, meta_corto_plazo, meta_mediano_plazo, meta_largo_plazo)
+         VALUES (?,?,?,?)`,
+        [idAspirante, metas_personales.corto_plazo, metas_personales.mediano_plazo, metas_personales.largo_plazo]
       );
     }
 
-    // 8) Seguridad / cuestionario personal (Dynamic_hv_seguridad)
+    // Seguridad
     if (seguridad) {
       await conn.query(
-        `
-        INSERT INTO Dynamic_hv_seguridad (
-          id_aspirante,
-          llamados_atencion,
-          detalle_llamados,
-          accidente_laboral,
-          detalle_accidente,
-          enfermedad_importante,
-          detalle_enfermedad,
-          consume_alcohol,
-          frecuencia_alcohol,
-          familiar_en_empresa,
-          detalle_familiar_empresa,
-          info_falsa,
-          acepta_poligrafo,
-          observaciones,
-          califica_para_cargo,
-          fortalezas,
-          aspectos_mejorar,
-          resolucion_problemas
-        )
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        `,
+        `INSERT INTO Dynamic_hv_seguridad (
+          id_aspirante, llamados_atencion, detalle_llamados, accidente_laboral, detalle_accidente,
+          enfermedad_importante, detalle_enfermedad, consume_alcohol, frecuencia_alcohol,
+          familiar_en_empresa, detalle_familiar_empresa, info_falsa, acepta_poligrafo,
+          observaciones, califica_para_cargo, fortalezas, aspectos_mejorar, resolucion_problemas
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           idAspirante,
-          seguridad.llamados_atencion || null,
-          seguridad.detalle_llamados || null,
-          seguridad.accidente_laboral || null,
-          seguridad.detalle_accidente || null,
-          seguridad.enfermedad_importante || null,
-          seguridad.detalle_enfermedad || null,
-          seguridad.consume_alcohol || null,
-          seguridad.frecuencia_alcohol || null,
-          seguridad.familiar_en_empresa || null,
-          seguridad.detalle_familiar_empresa || null,
-          seguridad.info_falsa || null,
-          seguridad.acepta_poligrafo || null,
-          seguridad.observaciones || null,
-          seguridad.califica_para_cargo || null,
-          seguridad.fortalezas || null,
-          seguridad.aspectos_mejorar || null,
-          seguridad.resolucion_problemas || null
+          seguridad.llamados_atencion,
+          seguridad.detalle_llamados,
+          seguridad.accidente_laboral,
+          seguridad.detalle_accidente,
+          seguridad.enfermedad_importante,
+          seguridad.detalle_enfermedad,
+          seguridad.consume_alcohol,
+          seguridad.frecuencia_alcohol,
+          seguridad.familiar_en_empresa,
+          seguridad.detalle_familiar_empresa,
+          seguridad.info_falsa,
+          seguridad.acepta_poligrafo,
+          seguridad.observaciones,
+          seguridad.califica_para_cargo,
+          seguridad.fortalezas,
+          seguridad.aspectos_mejorar,
+          seguridad.resolucion_problemas
         ]
       );
     }
 
+    // 6. CONFIRMAR TRANSACCIÓN
     await conn.commit();
+    console.log("✅ Transacción completada exitosamente");
 
-    // =============================================
-    // GENERACIÓN DEL PDF - VERSIÓN FUNCIONAL
-    // =============================================
-    console.log("🎯 INICIANDO GENERACIÓN PDF");
-    let pdfUrl = null;
-
-    try {
-      // 1. PREPARAR DATOS COMPLETOS
-      function toHtmlList(items, renderer) {
-        if (!Array.isArray(items) || items.length === 0) return "<div class='small'>No registrado</div>";
-        return items.map((it, i) => `<div class=\"list-item\"><strong>${i + 1}.</strong> ${renderer(it)}</div>`).join("");
-      }
-
-      const EDUCACION_LIST = toHtmlList(educacion, e => `${escapeHtml(e.institucion || "")} — ${escapeHtml(e.programa || "")} (${escapeHtml(e.modalidad || "-")}) ${e.ano ? `• ${escapeHtml(String(e.ano))}` : ""}`);
-      const EXPERIENCIA_LIST = toHtmlList(experiencia_laboral, ex => `${escapeHtml(ex.empresa || "")} — ${escapeHtml(ex.cargo || "")}<br><span class=\"small\">${escapeHtml(ex.tiempo_laborado || "")} • ${escapeHtml(ex.funciones || "")}</span>`);
-      const REFERENCIAS_LIST = toHtmlList(referencias, r => {
-        if ((r.tipo_referencia || "").toLowerCase().includes("laboral")) {
-          return `${escapeHtml(r.empresa || "")} — ${escapeHtml(r.jefe_inmediato || "")} (${escapeHtml(r.telefono || "")})`;
-        }
-        return `${escapeHtml(r.nombre_completo || "")} — ${escapeHtml(r.telefono || "")} ${escapeHtml(r.ocupacion || "") ? "• " + escapeHtml(r.ocupacion) : ""}`;
-      });
-      const FAMILIARES_LIST = toHtmlList(familiares, f => `${escapeHtml(f.nombre_completo || "")} — ${escapeHtml(f.parentesco || "")} • ${escapeHtml(String(f.edad || ""))}`);
-      const CONTACTO_HTML = contacto_emergencia && contacto_emergencia.nombre_completo ? `${escapeHtml(contacto_emergencia.nombre_completo)} • ${escapeHtml(contacto_emergencia.telefono || "")} • ${escapeHtml(contacto_emergencia.correo_electronico || "")}` : "";
-
-      // Metas
-      const metasObj = metas_personales || {};
-      const metasItems = [];
-      const m1 = metasObj.meta_corto_plazo || metasObj.corto_plazo || "";
-      const m2 = metasObj.meta_mediano_plazo || metasObj.mediano_plazo || "";
-      const m3 = metasObj.meta_largo_plazo || metasObj.largo_plazo || "";
-      if (m1 && m1.trim()) metasItems.push(m1.trim());
-      if (m2 && m2.trim()) metasItems.push(m2.trim());
-      if (m3 && m3.trim()) metasItems.push(m3.trim());
-
-      let METAS_HTML;
-      if (metasItems.length === 0) {
-        METAS_HTML = "<div class='small'>No registrado</div>";
-      } else {
-        METAS_HTML = metasItems.map((txt, i) => `<div class="list-item"><strong>${i + 1}.</strong> ${escapeHtml(txt)}</div>`).join("");
-      }
-
-      // 2. CONSTRUIR DATAOBJECTS COMPLETO
-      const aspiranteData = {
-        NOMBRE_COMPLETO: `${escapeHtml(primer_nombre || "")} ${escapeHtml(primer_apellido || "")}`.trim(),
-        TIPO_ID: escapeHtml(tipo_documento || ""),
-        IDENTIFICACION: escapeHtml(identificacion || ""),
-        CIUDAD_RESIDENCIA: escapeHtml(ciudad_residencia || ""),
-        TELEFONO: escapeHtml(telefono || ""),
-        CORREO: escapeHtml(correo_electronico || ""),
-        DIRECCION: escapeHtml(direccion_barrio || ""),
-        FECHA_NACIMIENTO: escapeHtml(fecha_nacimiento || ""),
-        ESTADO_CIVIL: escapeHtml(estado_civil || ""),
-        EPS: escapeHtml(eps || ""),
-        AFP: escapeHtml(afp || ""),
-        RH: escapeHtml(rh || ""),
-        CAMISA_TALLA: escapeHtml(camisa_talla || ""),
-        TALLA_PANTALON: escapeHtml(talla_pantalon || ""),
-        ZAPATOS_TALLA: escapeHtml(zapatos_talla || ""),
-        PHOTO_URL: datosAspirante.foto_public_url || "",
-        EDUCACION_LIST,
-        EXPERIENCIA_LIST,
-        REFERENCIAS_LIST,
-        FAMILIARES_LIST,
-        CONTACTO_EMERGENCIA: CONTACTO_HTML,
-        METAS: METAS_HTML,
-        FECHA_GENERACION: new Date().toLocaleString(),
-        LOGO_URL: "https://storage.googleapis.com/logyser-recibo-public/logo.png"
-      };
-
-      console.log("✅ Datos preparados, llamando a generateAndUploadPdf...");
-
-      // 3. LLAMAR A LA FUNCIÓN
-      const { destName, signedUrl } = await generateAndUploadPdf({
-        identificacion,
-        dataObjects: aspiranteData
-      });
-
-      pdfUrl = signedUrl;
-
-      // 4. GUARDAR EN DB
-      await conn.query(
-        `UPDATE Dynamic_hv_aspirante SET pdf_gcs_path = ?, pdf_public_url = ? WHERE identificacion = ?`,
-        [destName, signedUrl, identificacion]
-      );
-
-      console.log("🎉 PDF GENERADO EXITOSAMENTE:", pdfUrl);
-
-    } catch (error) {
-      console.error("❌ ERROR generando PDF:", error.message);
-      pdfUrl = null;
-    }
-
-    // 5. RESPONDER AL FRONTEND
-    res.json({
+    // 7. RESPONDER AL FRONTEND
+    const response = {
       ok: true,
       message: "Hoja de vida registrada correctamente",
       id_aspirante: idAspirante,
       pdf_url: pdfUrl
-    });
+    };
+
+    if (!pdfUrl) {
+      response.warning = "El PDF no se pudo generar, pero los datos fueron guardados";
+    }
+
+    console.log("📤 Enviando respuesta al frontend:", response);
+    res.json(response);
 
   } catch (error) {
-    console.error("Error registrando HV:", error);
+    console.error("❌ ERROR registrando HV:", error);
     await conn.rollback();
+
     res.status(500).json({
       ok: false,
-      error: "Error registrando hoja de vida",
+      error: "Error registrando hoja de vida: " + error.message,
       pdf_url: null
     });
+
   } finally {
     conn.release();
+    console.log("🔚 Conexión liberada");
   }
 });
 
