@@ -4,6 +4,7 @@
 //  Listo para Cloud Run
 // ==========================================================
 import { generateAndUploadPdf, testGenerateAndUploadPdf } from "./pdf-generator.js"; // agrega import
+import { uploadSimplePdf } from "./pdf-test-simple.js";
 
 import multer from "multer";
 import { Storage } from "@google-cloud/storage";
@@ -209,6 +210,34 @@ app.post('/api/test/pdf-upload', async (req, res) => {
 
   } catch (error) {
     console.error("Error en endpoint de prueba:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Luego, agrega este endpoint NUEVO (antes de app.listen):
+app.post("/api/pdf/simple-test", async (req, res) => {
+  console.log("🧪 Endpoint SIMPLE de prueba PDF");
+
+  try {
+    const { identificacion } = req.body;
+
+    if (!identificacion) {
+      return res.status(400).json({
+        success: false,
+        error: "Se requiere identificación"
+      });
+    }
+
+    // Usar la función simple
+    const result = await uploadSimplePdf(identificacion);
+
+    res.json(result);
+
+  } catch (error) {
+    console.error("Error en simple-test:", error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -543,132 +572,106 @@ app.post("/api/hv/registrar", async (req, res) => {
 
     console.log("🔍 Iniciando registro de HV para:", identificacion);
 
-    // 1. PREPARAR DATOS PARA EL PDF (ANTES DE CUALQUIER COMMIT)
-    console.log("📋 Preparando datos para PDF...");
-
-    function toHtmlList(items, renderer) {
-      if (!Array.isArray(items) || items.length === 0) return "<div class='small'>No registrado</div>";
-      return items.map((it, i) => `<div class=\"list-item\"><strong>${i + 1}.</strong> ${renderer(it)}</div>`).join("");
-    }
-
-    const EDUCACION_LIST = toHtmlList(educacion, e => `${escapeHtml(e.institucion || "")} — ${escapeHtml(e.programa || "")} (${escapeHtml(e.modalidad || "-")}) ${e.ano ? `• ${escapeHtml(String(e.ano))}` : ""}`);
-    const EXPERIENCIA_LIST = toHtmlList(experiencia_laboral, ex => `${escapeHtml(ex.empresa || "")} — ${escapeHtml(ex.cargo || "")}<br><span class=\"small\">${escapeHtml(ex.tiempo_laborado || "")} • ${escapeHtml(ex.funciones || "")}</span>`);
-    const REFERENCIAS_LIST = toHtmlList(referencias, r => {
-      if ((r.tipo_referencia || "").toLowerCase().includes("laboral")) {
-        return `${escapeHtml(r.empresa || "")} — ${escapeHtml(r.jefe_inmediato || "")} (${escapeHtml(r.telefono || "")})`;
-      }
-      return `${escapeHtml(r.nombre_completo || "")} — ${escapeHtml(r.telefono || "")} ${escapeHtml(r.ocupacion || "") ? "• " + escapeHtml(r.ocupacion) : ""}`;
-    });
-    const FAMILIARES_LIST = toHtmlList(familiares, f => `${escapeHtml(f.nombre_completo || "")} — ${escapeHtml(f.parentesco || "")} • ${escapeHtml(String(f.edad || ""))}`);
-    const CONTACTO_HTML = contacto_emergencia && contacto_emergencia.nombre_completo ?
-      `${escapeHtml(contacto_emergencia.nombre_completo)} • ${escapeHtml(contacto_emergencia.telefono || "")} • ${escapeHtml(contacto_emergencia.correo_electronico || "")}` :
-      "No registrado";
-
-    // Metas
-    const metasObj = metas_personales || {};
-    const m1 = metasObj.meta_corto_plazo || metasObj.corto_plazo || "";
-    const m2 = metasObj.meta_mediano_plazo || metasObj.mediano_plazo || "";
-    const m3 = metasObj.meta_largo_plazo || metasObj.largo_plazo || "";
-
-    let METAS_HTML;
-    if (m1 || m2 || m3) {
-      const metasItems = [];
-      if (m1.trim()) metasItems.push(m1.trim());
-      if (m2.trim()) metasItems.push(m2.trim());
-      if (m3.trim()) metasItems.push(m3.trim());
-      METAS_HTML = metasItems.map((txt, i) => `<div class="list-item"><strong>${i + 1}.</strong> ${escapeHtml(txt)}</div>`).join("");
-    } else {
-      METAS_HTML = "<div class='small'>No registrado</div>";
-    }
-
-    // Datos de seguridad para el PDF
-    const SEG_LLAMADOS = seguridad?.llamados_atencion || "No";
-    const SEG_DETALLE_LLAMADOS = escapeHtml(seguridad?.detalle_llamados || "");
-    const SEG_ACCIDENTE = seguridad?.accidente_laboral || "No";
-    const SEG_DETALLE_ACCIDENTE = escapeHtml(seguridad?.detalle_accidente || "");
-    const SEG_ENFERMEDAD = seguridad?.enfermedad_importante || "No";
-    const SEG_DETALLE_ENFERMEDAD = escapeHtml(seguridad?.detalle_enfermedad || "");
-    const SEG_ALCOHOL = seguridad?.consume_alcohol || "No";
-    const SEG_FRECUENCIA = escapeHtml(seguridad?.frecuencia_alcohol || "");
-    const SEG_FAMILIAR = seguridad?.familiar_en_empresa || "No";
-    const SEG_DETALLE_FAMILIAR = escapeHtml(seguridad?.detalle_familiar_empresa || "");
-    const SEG_INFO_FALSA = seguridad?.info_falsa || "No";
-    const SEG_POLIGRAFO = seguridad?.acepta_poligrafo || "No";
-    const SEG_FORTALEZAS = escapeHtml(seguridad?.fortalezas || "");
-    const SEG_MEJORAR = escapeHtml(seguridad?.aspectos_mejorar || "");
-    const SEG_RESOLUCION = escapeHtml(seguridad?.resolucion_problemas || "");
-    const SEG_OBSERVACIONES = escapeHtml(seguridad?.observaciones || "");
-
-    // 2. GENERAR PDF PRIMERO (PARA TENER LA URL PARA GUARDAR)
-    console.log("🎯 Generando PDF...");
+    // 1. GENERAR PDF SIMPLE (SE EJECUTA SIEMPRE)
+    console.log("🎯 Generando PDF simple...");
     try {
-      const aspiranteData = {
-        NOMBRE_COMPLETO: `${escapeHtml(primer_nombre || "")} ${escapeHtml(primer_apellido || "")}`.trim(),
-        TIPO_ID: escapeHtml(tipo_documento || ""),
-        IDENTIFICACION: escapeHtml(identificacion || ""),
-        CIUDAD_RESIDENCIA: escapeHtml(ciudad_residencia || ""),
-        TELEFONO: escapeHtml(telefono || ""),
-        CORREO: escapeHtml(correo_electronico || ""),
-        DIRECCION: escapeHtml(direccion_barrio || ""),
-        FECHA_NACIMIENTO: escapeHtml(fecha_nacimiento || ""),
-        ESTADO_CIVIL: escapeHtml(estado_civil || ""),
-        EPS: escapeHtml(eps || ""),
-        AFP: escapeHtml(afp || ""),
-        RH: escapeHtml(rh || ""),
-        CAMISA_TALLA: escapeHtml(camisa_talla || ""),
-        TALLA_PANTALON: escapeHtml(talla_pantalon || ""),
-        ZAPATOS_TALLA: escapeHtml(zapatos_talla || ""),
-        PHOTO_URL: datosAspirante.foto_public_url || "",
-        EDUCACION_LIST,
-        EXPERIENCIA_LIST,
-        REFERENCIAS_LIST,
-        FAMILIARES_LIST,
-        CONTACTO_EMERGENCIA: CONTACTO_HTML,
-        METAS: METAS_HTML,
-        FECHA_GENERACION: new Date().toLocaleString(),
-        LOGO_URL: "https://storage.googleapis.com/logyser-recibo-public/logo.png",
-        // Campos de seguridad
-        SEG_LLAMADOS,
-        SEG_DETALLE_LLAMADOS,
-        SEG_ACCIDENTE,
-        SEG_DETALLE_ACCIDENTE,
-        SEG_ENFERMEDAD,
-        SEG_DETALLE_ENFERMEDAD,
-        SEG_ALCOHOL,
-        SEG_FRECUENCIA,
-        SEG_FAMILIAR,
-        SEG_DETALLE_FAMILIAR,
-        SEG_INFO_FALSA,
-        SEG_POLIGRAFO,
-        SEG_FORTALEZAS,
-        SEG_MEJORAR,
-        SEG_RESOLUCION,
-        SEG_OBSERVACIONES
-      };
+      // Crear PDF básico
+      const pdfContent = `%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
 
-      const result = await generateAndUploadPdf({
-        identificacion,
-        dataObjects: aspiranteData
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+
+4 0 obj
+<< /Length 200 >>
+stream
+BT
+/F1 28 Tf
+100 700 Td
+(HOJA DE VIDA - LOGYSER) Tj
+0 -50 Td
+(Fecha: ${new Date().toLocaleDateString('es-CO')}) Tj
+0 -40 Td
+(Identificación: ${identificacion || "N/A"}) Tj
+0 -40 Td
+(Nombre: ${primer_nombre || ""} ${primer_apellido || ""}) Tj
+0 -40 Td
+(Email: ${correo_electronico || "N/A"}) Tj
+0 -40 Td
+(Teléfono: ${telefono || "N/A"}) Tj
+0 -40 Td
+(Total Estudios: ${educacion.length}) Tj
+0 -40 Td
+(Total Experiencia: ${experiencia_laboral.length}) Tj
+0 -40 Td
+(Registro completado exitosamente) Tj
+ET
+endstream
+endobj
+
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+
+xref
+0 6
+0000000000 65535 f 
+0000000010 00000 n 
+0000000053 00000 n 
+0000000102 00000 n 
+0000000178 00000 n 
+0000000305 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+468
+%%EOF`;
+
+      const pdfBuffer = Buffer.from(pdfContent);
+      console.log("✅ PDF básico creado:", pdfBuffer.length, "bytes");
+
+      // Subir a Google Cloud Storage
+      const timestamp = Date.now();
+      const fileName = `${identificacion}/cv_simple_${timestamp}.pdf`;
+
+      console.log("📤 Subiendo a GCS:", fileName);
+
+      const file = bucket.file(fileName);
+      await file.save(pdfBuffer, {
+        contentType: 'application/pdf',
+        resumable: false,
+        metadata: {
+          tipo: 'simple_auto',
+          identificacion: identificacion,
+          timestamp: new Date().toISOString()
+        }
       });
 
-      if (result.success) {
-        pdfUrl = result.url;
-        pdfGcsPath = result.fileName;
-        console.log("✅ PDF generado exitosamente:", pdfUrl);
-      } else {
-        console.error("❌ ERROR generando PDF:", result.error);
-        throw new Error("Falló la generación del PDF: " + result.error);
-      }
-      console.log("✅ PDF generado exitosamente:", pdfUrl);
+      console.log("✅ PDF subido a GCS");
+
+      // Generar URL pública
+      const publicUrl = `https://storage.googleapis.com/${GCS_BUCKET}/${fileName}`;
+
+      console.log("🔗 URL generada:", publicUrl);
+
+      pdfUrl = publicUrl;
+      pdfGcsPath = fileName;
 
     } catch (pdfError) {
-      console.error("❌ ERROR generando PDF:", pdfError.message);
-      // Continuamos sin PDF, pero marcamos el error
+      console.error("❌ ERROR generando PDF simple:", pdfError.message);
+      // Continuar sin PDF pero marcar warning
       pdfUrl = null;
       pdfGcsPath = null;
     }
 
-    // 3. VERIFICAR SI YA EXISTE ASPIRANTE
+    // 2. VERIFICAR SI YA EXISTE ASPIRANTE
     if (identificacion) {
       const [existingRows] = await conn.query(
         `SELECT id_aspirante FROM Dynamic_hv_aspirante WHERE identificacion = ? LIMIT 1`,
@@ -679,7 +682,7 @@ app.post("/api/hv/registrar", async (req, res) => {
       }
     }
 
-    // 4. INSERTAR O ACTUALIZAR ASPIRANTE CON LA URL DEL PDF
+    // 3. INSERTAR O ACTUALIZAR ASPIRANTE CON LA URL DEL PDF
     if (idAspirante) {
       // --- Caso: ya existe -> UPDATE ---
       console.log("🔄 Actualizando aspirante existente:", idAspirante);
@@ -848,7 +851,7 @@ app.post("/api/hv/registrar", async (req, res) => {
 
     console.log("✅ Aspirante registrado con ID:", idAspirante);
 
-    // 5. INSERTAR DATOS HIJOS
+    // 4. INSERTAR DATOS HIJOS
     // Educación
     for (const edu of educacion) {
       if (!edu.institucion && !edu.programa) continue;
@@ -940,13 +943,14 @@ app.post("/api/hv/registrar", async (req, res) => {
       );
     }
 
-    // 6. CONFIRMAR TRANSACCIÓN
+    // 5. CONFIRMAR TRANSACCIÓN
     await conn.commit();
     console.log("✅ Transacción completada exitosamente");
 
-    // 7. RESPONDER AL FRONTEND
+    // 6. RESPONDER AL FRONTEND
     const response = {
       ok: true,
+      success: true,
       message: "Hoja de vida registrada correctamente",
       id_aspirante: idAspirante,
       pdf_url: pdfUrl
@@ -954,24 +958,41 @@ app.post("/api/hv/registrar", async (req, res) => {
 
     if (!pdfUrl) {
       response.warning = "El PDF no se pudo generar, pero los datos fueron guardados";
+      console.warn("⚠️ PDF no generado, pero datos guardados");
+    } else {
+      console.log("✅ Todo completado - PDF disponible en:", pdfUrl);
     }
 
-    console.log("📤 Enviando respuesta al frontend:", response);
+    console.log("📤 Enviando respuesta al frontend");
     res.json(response);
 
   } catch (error) {
     console.error("❌ ERROR registrando HV:", error);
-    await conn.rollback();
+
+    // Rollback solo si la conexión está activa
+    try {
+      await conn.rollback();
+    } catch (rollbackError) {
+      console.error("Error en rollback:", rollbackError);
+    }
 
     res.status(500).json({
       ok: false,
+      success: false,
       error: "Error registrando hoja de vida: " + error.message,
       pdf_url: null
     });
 
   } finally {
-    conn.release();
-    console.log("🔚 Conexión liberada");
+    // Liberar conexión solo si está activa
+    try {
+      if (conn) {
+        conn.release();
+        console.log("🔚 Conexión liberada");
+      }
+    } catch (releaseError) {
+      console.error("Error liberando conexión:", releaseError);
+    }
   }
 });
 
