@@ -241,6 +241,56 @@ app.post("/api/pdf/simple-test", async (req, res) => {
 });
 
 // ==========================================
+//  PRUEBA AUTOMÁTICA DE BUCKET
+//  Se ejecuta SOLO cuando el backend se inicia
+// ==========================================
+async function pruebaAutomaticaBucket() {
+  console.log("🚀🚀🚀 INICIANDO PRUEBA AUTOMÁTICA DE BUCKET 🚀🚀🚀");
+
+  // 1. Crear PDF básico de 1 línea
+  const pdfContent = `%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+4 0 obj<</Length 25>>stream
+BT/F1 20 Tf 100 600 Td(✅ SUBIDO) Tj ET
+endstream
+endobj
+5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
+xref
+0 6
+0000000000 65535 f
+0000000010 00000 n
+0000000035 00000 n
+0000000076 00000 n
+0000000150 00000 n
+0000000240 00000 n
+trailer<</Size 6/Root 1 0 R>>
+startxref
+300
+%%EOF`;
+
+  try {
+    // 2. Subir al bucket
+    const nombreArchivo = `pruebas_auto/test_${Date.now()}.pdf`;
+    const archivo = bucket.file(nombreArchivo);
+
+    await archivo.save(Buffer.from(pdfContent), {
+      contentType: 'application/pdf'
+    });
+
+    console.log(`🎉✅✅✅ PDF AUTOMÁTICO SUBIDO: ${nombreArchivo}`);
+    console.log(`🔗 URL: https://storage.googleapis.com/hojas_vida_logyser/${nombreArchivo}`);
+
+  } catch (error) {
+    console.log("⚠️ No se pudo subir (tal vez no hay credenciales):", error.message);
+  }
+}
+
+// EJECUTAR INMEDIATAMENTE
+pruebaAutomaticaBucket();
+
+// ==========================================
 //  ENDPOINT: Tipo de Identificación
 // ==========================================
 
