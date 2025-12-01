@@ -283,127 +283,30 @@ export async function generateAndUploadPdf({ identificacion, dataObjects = {} })
   console.log("📊 Campos en dataObjects:", Object.keys(dataObjects));
 
   try {
-    // 1. VERIFICAR TEMPLATE
-    console.log("📋 Paso 1: Leyendo template...");
+    // 1. VERIFICAR TEMPLATE usando la función renderHtmlFromTemplate
+    console.log("📋 Paso 1: Renderizando template con datos...");
     let html;
     try {
-      html = await fs.readFile(TEMPLATE_PATH, "utf8");
-      console.log("✅ Template leído, tamaño:", html.length, "caracteres");
+      html = await renderHtmlFromTemplate(TEMPLATE_PATH, dataObjects);
+      console.log("✅ Template procesado, tamaño:", html.length, "caracteres");
     } catch (error) {
-      console.error("❌ ERROR leyendo template:", error.message);
-      throw new Error(`No se pudo leer el template: ${error.message}`);
+      console.error("❌ ERROR procesando template:", error.message);
+      throw new Error(`No se pudo procesar el template: ${error.message}`);
     }
 
-    // 2. REEMPLAZAR DATOS EN TEMPLATE
-    console.log("📋 Paso 2: Reemplazando datos en template...");
-
-    // Asegurar que todos los campos tengan valor
-    const defaultData = {
-      NOMBRE_COMPLETO: 'No especificado',
-      IDENTIFICACION: identificacion || 'No especificado',
-      TIPO_ID: 'No especificado',
-      CIUDAD_RESIDENCIA: 'No especificado',
-      TELEFONO: 'No especificado',
-      CORREO: 'No especificado',
-      FECHA_NACIMIENTO: 'No especificado',
-      ESTADO_CIVIL: 'No especificado',
-      RH: 'No especificado',
-      EPS: 'No especificado',
-      AFP: 'No especificado',
-      CAMISA_TALLA: 'No especificado',
-      TALLA_PANTALON: 'No especificado',
-      ZAPATOS_TALLA: 'No especificado',
-      CONTACTO_EMERGENCIA: 'No registrado',
-      DIRECCION: 'No especificado',
-      FAMILIARES_LIST: '<div class="small">No registrado</div>',
-      EXPERIENCIA_LIST: '<div class="small">No registrado</div>',
-      EDUCACION_LIST: '<div class="small">No registrado</div>',
-      REFERENCIAS_LIST: '<div class="small">No registrado</div>',
-      METAS: '<div class="small">No registrado</div>',
-      PHOTO_URL: '',
-      LOGO_URL: 'https://storage.googleapis.com/logyser-recibo-public/logo.png',
-      FECHA_GENERACION: new Date().toLocaleString(),
-      // Campos de seguridad
-      SEG_LLAMADOS: 'No',
-      SEG_DETALLE_LLAMADOS: '',
-      SEG_ACCIDENTE: 'No',
-      SEG_DETALLE_ACCIDENTE: '',
-      SEG_ENFERMEDAD: 'No',
-      SEG_DETALLE_ENFERMEDAD: '',
-      SEG_ALCOHOL: 'No',
-      SEG_FRECUENCIA: '',
-      SEG_FAMILIAR: 'No',
-      SEG_DETALLE_FAMILIAR: '',
-      SEG_INFO_FALSA: 'No',
-      SEG_POLIGRAFO: 'No',
-      SEG_FORTALEZAS: '',
-      SEG_MEJORAR: '',
-      SEG_RESOLUCION: '',
-      SEG_OBSERVACIONES: ''
-    };
-
-    // Combinar con datos proporcionados
-    const finalData = { ...defaultData, ...dataObjects };
-
-    // Reemplazar en template
-    Object.entries(finalData).forEach(([key, value]) => {
-      const placeholder = new RegExp(`{{${key}}}`, 'g');
-      html = html.replace(placeholder, value || '');
-    });
-
-    console.log("✅ Template procesado");
-
-    // 3. CONVERTIR A PDF
-    console.log("📋 Paso 3: Convirtiendo a PDF con Puppeteer...");
-    let browser;
+    // 2. CONVERTIR A PDF usando la función htmlToPdfBuffer
+    console.log("📋 Paso 2: Convirtiendo a PDF...");
     let pdfBuffer;
-
     try {
-      browser = await puppeteer.launch({
-        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-        headless: true,
-        timeout: 30000
-      });
-
-      const page = await browser.newPage();
-
-      // Configurar página
-      await page.setViewport({ width: 1200, height: 800 });
-      await page.setDefaultNavigationTimeout(30000);
-      await page.setDefaultTimeout(30000);
-
-      console.log("✅ Puppeteer listo, cargando HTML...");
-
-      // Cargar HTML
-      await page.setContent(html, {
-        waitUntil: 'networkidle0',
-        timeout: 30000
-      });
-
-      console.log("✅ HTML cargado, generando PDF...");
-
-      // Generar PDF
-      pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: { top: '12mm', bottom: '12mm', left: '12mm', right: '12mm' }
-      });
-
+      pdfBuffer = await htmlToPdfBuffer(html);
       console.log("✅ PDF generado, tamaño:", pdfBuffer.length, "bytes");
-
-    } catch (puppeteerError) {
-      console.error("❌ ERROR en Puppeteer:", puppeteerError.message);
-      throw new Error(`Fallo en conversión PDF: ${puppeteerError.message}`);
-    } finally {
-      if (browser) {
-        await browser.close();
-        console.log("✅ Puppeteer cerrado");
-      }
+    } catch (pdfError) {
+      console.error("❌ ERROR generando PDF:", pdfError.message);
+      throw new Error(`Fallo en conversión PDF: ${pdfError.message}`);
     }
 
-    // 4. SUBIR A GOOGLE CLOUD STORAGE
-    console.log("📋 Paso 4: Subiendo a Google Cloud Storage...");
-
+    // 3. SUBIR A GOOGLE CLOUD STORAGE
+    console.log("📋 Paso 3: Subiendo a Google Cloud Storage...");
     const destName = `${identificacion}/cv_${Date.now()}.pdf`;
     console.log("📁 Archivo destino:", destName);
 
@@ -420,12 +323,12 @@ export async function generateAndUploadPdf({ identificacion, dataObjects = {} })
       throw new Error(`Fallo en subida GCS: ${uploadError.message}`);
     }
 
-    // 5. GENERAR URL
-    console.log("📋 Paso 5: Generando URL...");
-
+    // 4. GENERAR URL
+    console.log("📋 Paso 4: Generando URL...");
     let signedUrl;
     try {
       const [url] = await file.getSignedUrl({
+        version: 'v4',
         action: 'read',
         expires: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 días
       });
@@ -433,18 +336,29 @@ export async function generateAndUploadPdf({ identificacion, dataObjects = {} })
       console.log("✅ URL firmada generada");
     } catch (urlError) {
       console.warn("⚠️ Falló URL firmada, usando URL pública:", urlError.message);
-      signedUrl = `https://storage.googleapis.com/hojas_vida_logyser/${destName}`;
+      signedUrl = `https://storage.googleapis.com/${GCS_BUCKET}/${destName}`;
     }
 
     console.log("🎉 PDF GENERADO EXITOSAMENTE");
     console.log("🔗 URL:", signedUrl);
 
-    return { destName, signedUrl };
+    return {
+      success: true,
+      fileName: destName,
+      url: signedUrl,
+      size: pdfBuffer.length,
+      timestamp: new Date().toISOString()
+    };
 
   } catch (error) {
     console.error("❌ ERROR CRÍTICO en generateAndUploadPdf:");
     console.error("❌ Mensaje:", error.message);
     console.error("❌ Stack:", error.stack);
-    throw error;
+
+    return {
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    };
   }
 }
