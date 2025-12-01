@@ -1,9 +1,4 @@
-// ==========================================================
-//  Backend de configuración HV - Logyser
-//  Node.js + Express + MySQL (mysql2/promise)
-//  Listo para Cloud Run
-// ==========================================================
-import { generateAndUploadPdf, testGenerateAndUploadPdf } from "./pdf-generator.js"; // agrega import
+
 import { uploadSimplePdf } from "./pdf-test-simple.js";
 
 import multer from "multer";
@@ -186,36 +181,36 @@ app.get('/', (req, res) => {
 });
 
 // En server.js, agrega este endpoint nuevo
-app.post('/api/test/pdf-upload', async (req, res) => {
-  console.log("🧪 Endpoint de prueba de PDF");
+// app.post('/api/test/pdf-upload', async (req, res) => {
+//   console.log("🧪 Endpoint de prueba de PDF");
 
-  try {
-    const { identificacion, nombre } = req.body;
+//   try {
+//     const { identificacion, nombre } = req.body;
 
-    if (!identificacion) {
-      return res.status(400).json({ error: "Falta identificación" });
-    }
+//     if (!identificacion) {
+//       return res.status(400).json({ error: "Falta identificación" });
+//     }
 
-    const result = await testGenerateAndUploadPdf({
-      identificacion: identificacion || `test_${Date.now()}`,
-      datosAspirante: {
-        NOMBRE_COMPLETO: nombre || "Usuario de Prueba",
-        TELEFONO: "3001234567",
-        CORREO: "prueba@logyser.com",
-        EPS: "SURA"
-      }
-    });
+//     const result = await testGenerateAndUploadPdf({
+//       identificacion: identificacion || `test_${Date.now()}`,
+//       datosAspirante: {
+//         NOMBRE_COMPLETO: nombre || "Usuario de Prueba",
+//         TELEFONO: "3001234567",
+//         CORREO: "prueba@logyser.com",
+//         EPS: "SURA"
+//       }
+//     });
 
-    res.json(result);
+//     res.json(result);
 
-  } catch (error) {
-    console.error("Error en endpoint de prueba:", error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
+//   } catch (error) {
+//     console.error("Error en endpoint de prueba:", error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
 
 // Luego, agrega este endpoint NUEVO (antes de app.listen):
 app.post("/api/pdf/simple-test", async (req, res) => {
