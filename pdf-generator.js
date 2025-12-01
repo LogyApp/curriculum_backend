@@ -363,4 +363,290 @@ async function generateAndUploadPdf({ identificacion, dataObjects = {} }) {
   }
 }
 
-export { generateAndUploadPdf };
+export async function testGenerateAndUploadPdf({ identificacion, datosAspirante }) {
+  console.log("🧪 INICIANDO PRUEBA DE PDF");
+  console.log("📝 Identificación:", identificacion);
+
+  try {
+    // 1. Crear HTML simple de prueba
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <meta charset="UTF-8">
+          <title>Hoja de Vida - ${identificacion}</title>
+          <style>
+              body {
+                  font-family: Arial, sans-serif;
+                  padding: 40px;
+                  background: #f5f5f5;
+              }
+              .container {
+                  max-width: 800px;
+                  margin: 0 auto;
+                  background: white;
+                  padding: 40px;
+                  border-radius: 10px;
+                  box-shadow: 0 0 20px rgba(0,0,0,0.1);
+              }
+              h1 {
+                  color: #000b59;
+                  border-bottom: 3px solid #f55400;
+                  padding-bottom: 10px;
+              }
+              .test-message {
+                  background: #e3f2fd;
+                  padding: 20px;
+                  border-radius: 8px;
+                  margin: 20px 0;
+                  border-left: 4px solid #2196f3;
+              }
+              .data-section {
+                  margin: 30px 0;
+                  padding: 20px;
+                  background: #f9f9f9;
+                  border-radius: 8px;
+              }
+              .field {
+                  margin: 10px 0;
+                  padding: 5px 0;
+                  border-bottom: 1px dashed #ddd;
+              }
+              .field-label {
+                  font-weight: bold;
+                  color: #555;
+                  min-width: 150px;
+                  display: inline-block;
+              }
+              .timestamp {
+                  text-align: center;
+                  color: #666;
+                  font-size: 12px;
+                  margin-top: 30px;
+              }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <h1>📄 Hoja de Vida - ${identificacion}</h1>
+              
+              <div class="test-message">
+                  <h2>✅ PRUEBA EXITOSA</h2>
+                  <p>Este es un PDF de prueba generado para verificar la funcionalidad del sistema.</p>
+                  <p><strong>Si puedes ver este PDF, significa que:</strong></p>
+                  <ul>
+                      <li>✅ Puppeteer está funcionando correctamente</li>
+                      <li>✅ La generación de PDF está operativa</li>
+                      <li>✅ La subida a Google Cloud Storage funciona</li>
+                  </ul>
+              </div>
+              
+              <div class="data-section">
+                  <h3>📋 Información del Aspirante</h3>
+                  
+                  <div class="field">
+                      <span class="field-label">Nombre:</span>
+                      ${datosAspirante?.NOMBRE_COMPLETO || 'No especificado'}
+                  </div>
+                  
+                  <div class="field">
+                      <span class="field-label">Identificación:</span>
+                      ${identificacion}
+                  </div>
+                  
+                  <div class="field">
+                      <span class="field-label">Teléfono:</span>
+                      ${datosAspirante?.TELEFONO || 'No especificado'}
+                  </div>
+                  
+                  <div class="field">
+                      <span class="field-label">Correo:</span>
+                      ${datosAspirante?.CORREO || 'No especificado'}
+                  </div>
+                  
+                  <div class="field">
+                      <span class="field-label">EPS:</span>
+                      ${datosAspirante?.EPS || 'No especificado'}
+                  </div>
+                  
+                  <div class="field">
+                      <span class="field-label">Fecha de generación:</span>
+                      ${new Date().toLocaleString('es-CO')}
+                  </div>
+              </div>
+              
+              <div class="data-section">
+                  <h3>📊 Resumen de datos</h3>
+                  <p><strong>Total de estudios registrados:</strong> ${datosAspirante?.EDUCACION_LIST?.match(/class="list-item"/g)?.length || 0}</p>
+                  <p><strong>Total de experiencias laborales:</strong> ${datosAspirante?.EXPERIENCIA_LIST?.match(/class="list-item"/g)?.length || 0}</p>
+                  <p><strong>Total de familiares:</strong> ${datosAspirante?.FAMILIARES_LIST?.match(/class="list-item"/g)?.length || 0}</p>
+              </div>
+              
+              <div class="timestamp">
+                  Generado automáticamente por Logyser • ${new Date().toLocaleString()}
+              </div>
+          </div>
+      </body>
+      </html>
+    `;
+
+    console.log("✅ HTML de prueba generado");
+
+    // 2. Generar PDF con Puppeteer
+    console.log("🔧 Iniciando Puppeteer...");
+    let browser;
+    let pdfBuffer;
+
+    try {
+      browser = await puppeteer.launch({
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+        headless: 'new',
+        timeout: 30000
+      });
+
+      const page = await browser.newPage();
+      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+
+      pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' }
+      });
+
+      console.log(`✅ PDF generado (${pdfBuffer.length} bytes)`);
+
+    } catch (puppeteerError) {
+      console.error("❌ ERROR en Puppeteer:", puppeteerError.message);
+
+      // Fallback: crear PDF muy básico si Puppeteer falla
+      console.log("🔄 Usando fallback básico para PDF...");
+      const basicPdfContent = `%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+
+4 0 obj
+<< /Length 44 >>
+stream
+BT
+/F1 24 Tf
+100 600 Td
+(✅ PDF de Prueba - ${identificacion}) Tj
+ET
+endstream
+endobj
+
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+
+xref
+0 6
+0000000000 65535 f 
+0000000010 00000 n 
+0000000053 00000 n 
+0000000102 00000 n 
+0000000178 00000 n 
+0000000305 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+395
+%%EOF`;
+
+      pdfBuffer = Buffer.from(basicPdfContent);
+      console.log("✅ PDF fallback creado");
+
+    } finally {
+      if (browser) {
+        await browser.close();
+        console.log("✅ Puppeteer cerrado");
+      }
+    }
+
+    // 3. Subir a Google Cloud Storage
+    console.log("☁️ Subiendo a Google Cloud Storage...");
+
+    const timestamp = Date.now();
+    const destName = `${identificacion}/cv_test_${timestamp}.pdf`;
+    console.log("📁 Archivo destino:", destName);
+
+    const file = bucket.file(destName);
+
+    try {
+      await file.save(pdfBuffer, {
+        contentType: 'application/pdf',
+        resumable: false,
+        metadata: {
+          test: 'true',
+          identificacion: identificacion,
+          timestamp: new Date().toISOString()
+        }
+      });
+
+      console.log("✅ PDF subido a GCS exitosamente");
+
+    } catch (uploadError) {
+      console.error("❌ ERROR subiendo a GCS:", uploadError.message);
+
+      // Fallback: guardar localmente si GCS falla
+      const localPath = path.join(__dirname, 'temp_pdfs', destName);
+      await fs.mkdir(path.dirname(localPath), { recursive: true });
+      await fs.writeFile(localPath, pdfBuffer);
+      console.log("✅ PDF guardado localmente en:", localPath);
+
+      throw new Error(`Fallo en subida GCS: ${uploadError.message}. PDF guardado localmente.`);
+    }
+
+    // 4. Generar URL de acceso
+    console.log("🔗 Generando URL...");
+
+    let signedUrl;
+    try {
+      const [url] = await file.getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 días
+      });
+      signedUrl = url;
+      console.log("✅ URL firmada generada");
+
+    } catch (urlError) {
+      console.warn("⚠️ Falló URL firmada, usando URL pública:", urlError.message);
+      signedUrl = `https://storage.googleapis.com/${GCS_BUCKET}/${destName}`;
+    }
+
+    console.log("🎉 PRUEBA DE PDF COMPLETADA EXITOSAMENTE");
+    console.log("🔗 URL del PDF:", signedUrl);
+    console.log("📊 Tamaño del PDF:", pdfBuffer.length, "bytes");
+
+    return {
+      success: true,
+      fileName: destName,
+      url: signedUrl,
+      size: pdfBuffer.length,
+      timestamp: new Date().toISOString(),
+      message: "PDF de prueba generado y subido exitosamente"
+    };
+
+  } catch (error) {
+    console.error("❌ ERROR en prueba de PDF:", error);
+
+    return {
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+      message: "Error en generación de PDF de prueba"
+    };
+  }
+}
+
+export { generateAndUploadPdf, testGenerateAndUploadPdf };

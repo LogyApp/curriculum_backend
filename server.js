@@ -3,7 +3,7 @@
 //  Node.js + Express + MySQL (mysql2/promise)
 //  Listo para Cloud Run
 // ==========================================================
-import { generateAndUploadPdf } from "./pdf-generator.js"; // agrega import
+import { generateAndUploadPdf, testGenerateAndUploadPdf } from "./pdf-generator.js"; // agrega import
 
 import multer from "multer";
 import { Storage } from "@google-cloud/storage";
@@ -182,6 +182,38 @@ app.get('/', (req, res) => {
   `;
 
   res.status(200).send(html);
+});
+
+// En server.js, agrega este endpoint nuevo
+app.post('/api/test/pdf-upload', async (req, res) => {
+  console.log("🧪 Endpoint de prueba de PDF");
+
+  try {
+    const { identificacion, nombre } = req.body;
+
+    if (!identificacion) {
+      return res.status(400).json({ error: "Falta identificación" });
+    }
+
+    const result = await testGenerateAndUploadPdf({
+      identificacion: identificacion || `test_${Date.now()}`,
+      datosAspirante: {
+        NOMBRE_COMPLETO: nombre || "Usuario de Prueba",
+        TELEFONO: "3001234567",
+        CORREO: "prueba@logyser.com",
+        EPS: "SURA"
+      }
+    });
+
+    res.json(result);
+
+  } catch (error) {
+    console.error("Error en endpoint de prueba:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // ==========================================
