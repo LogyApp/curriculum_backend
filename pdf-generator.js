@@ -277,7 +277,7 @@ async function htmlToPdfBuffer(html) {
   }
 }
 
-export async function generateAndUploadPdf({ identificacion, dataObjects = {} }) {
+async function generateAndUploadPdf({ identificacion, dataObjects = {} }) {
   console.log("🎯 INICIANDO generateAndUploadPdf");
   console.log("📝 Identificación:", identificacion);
   console.log("📊 Campos en dataObjects:", Object.keys(dataObjects));
@@ -362,3 +362,5 @@ export async function generateAndUploadPdf({ identificacion, dataObjects = {} })
     };
   }
 }
+
+export default { generateAndUploadPdf };

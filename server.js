@@ -614,13 +614,19 @@ app.post("/api/hv/registrar", async (req, res) => {
         SEG_OBSERVACIONES
       };
 
-      const { destName, signedUrl } = await generateAndUploadPdf({
+      const result = await generateAndUploadPdf({
         identificacion,
         dataObjects: aspiranteData
       });
 
-      pdfUrl = signedUrl;
-      pdfGcsPath = destName;
+      if (result.success) {
+        pdfUrl = result.url;
+        pdfGcsPath = result.fileName;
+        console.log("✅ PDF generado exitosamente:", pdfUrl);
+      } else {
+        console.error("❌ ERROR generando PDF:", result.error);
+        throw new Error("Falló la generación del PDF: " + result.error);
+      }
       console.log("✅ PDF generado exitosamente:", pdfUrl);
 
     } catch (pdfError) {
