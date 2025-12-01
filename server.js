@@ -244,51 +244,82 @@ app.post("/api/pdf/simple-test", async (req, res) => {
 //  PRUEBA AUTOMÁTICA DE BUCKET
 //  Se ejecuta SOLO cuando el backend se inicia
 // ==========================================
-async function pruebaAutomaticaBucket() {
-  console.log("🚀🚀🚀 INICIANDO PRUEBA AUTOMÁTICA DE BUCKET 🚀🚀🚀");
-
-  // 1. Crear PDF básico de 1 línea
-  const pdfContent = `%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
-4 0 obj<</Length 25>>stream
-BT/F1 20 Tf 100 600 Td(✅ SUBIDO) Tj ET
-endstream
-endobj
-5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
-xref
-0 6
-0000000000 65535 f
-0000000010 00000 n
-0000000035 00000 n
-0000000076 00000 n
-0000000150 00000 n
-0000000240 00000 n
-trailer<</Size 6/Root 1 0 R>>
-startxref
-300
-%%EOF`;
+// ==========================================
+//  PRUEBA AUTOMÁTICA CON DATOS REALES
+//  Se ejecuta SOLO cuando el backend se inicia
+// ==========================================
+async function pruebaPDFCompleto() {
+  console.log("🚀🚀🚀 EJECUTANDO PRUEBA COMPLETA DE PDF 🚀🚀🚀");
 
   try {
-    // 2. Subir al bucket
-    const nombreArchivo = `pruebas_auto/test_${Date.now()}.pdf`;
-    const archivo = bucket.file(nombreArchivo);
+    // Datos de ejemplo (similares a los que envía el frontend)
+    const datosPrueba = {
+      identificacion: `test_auto_${Date.now()}`,
+      dataObjects: {
+        NOMBRE_COMPLETO: "Juan Pérez Automático",
+        TIPO_ID: "CC",
+        IDENTIFICACION: `test_auto_${Date.now()}`,
+        CIUDAD_RESIDENCIA: "Bogotá D.C.",
+        TELEFONO: "3001234567",
+        CORREO: "test@logyser.com",
+        DIRECCION: "Calle 123 #45-67",
+        FECHA_NACIMIENTO: "1990-01-15",
+        ESTADO_CIVIL: "Soltero",
+        EPS: "SURA",
+        AFP: "Porvenir",
+        RH: "O+",
+        CAMISA_TALLA: "M",
+        TALLA_PANTALON: "32",
+        ZAPATOS_TALLA: "42",
+        PHOTO_URL: "",
+        EDUCACION_LIST: '<div class="list-item"><strong>1.</strong> Universidad Nacional — Ingeniería de Sistemas (Presencial) • 2015</div>',
+        EXPERIENCIA_LIST: '<div class="list-item"><strong>1.</strong> Empresa Tech — Desarrollador Senior<br><span class="small">3 años • Desarrollo de aplicaciones web</span></div>',
+        REFERENCIAS_LIST: '<div class="list-item"><strong>1.</strong> María Gómez — 3009876543 • Gerente</div>',
+        FAMILIARES_LIST: '<div class="list-item"><strong>1.</strong> Ana Pérez — Madre • 65</div>',
+        CONTACTO_EMERGENCIA: "Carlos López • 3204567890 • carlos@email.com",
+        METAS: '<div class="list-item"><strong>1.</strong> Crecer profesionalmente en la empresa</div><div class="list-item"><strong>2.</strong> Aprender nuevas tecnologías</div>',
+        FECHA_GENERACION: new Date().toLocaleString(),
+        LOGO_URL: "https://storage.googleapis.com/logyser-recibo-public/logo.png",
+        SEG_LLAMADOS: "No",
+        SEG_DETALLE_LLAMADOS: "",
+        SEG_ACCIDENTE: "No",
+        SEG_DETALLE_ACCIDENTE: "",
+        SEG_ENFERMEDAD: "No",
+        SEG_DETALLE_ENFERMEDAD: "",
+        SEG_ALCOHOL: "No",
+        SEG_FRECUENCIA: "",
+        SEG_FAMILIAR: "No",
+        SEG_DETALLE_FAMILIAR: "",
+        SEG_INFO_FALSA: "No",
+        SEG_POLIGRAFO: "Sí",
+        SEG_FORTALEZAS: "Trabajo en equipo, responsabilidad",
+        SEG_MEJORAR: "Gestión del tiempo",
+        SEG_RESOLUCION: "Analizo y busco soluciones prácticas",
+        SEG_OBSERVACIONES: "Ninguna"
+      }
+    };
 
-    await archivo.save(Buffer.from(pdfContent), {
-      contentType: 'application/pdf'
-    });
+    console.log("📊 Datos de prueba preparados");
 
-    console.log(`🎉✅✅✅ PDF AUTOMÁTICO SUBIDO: ${nombreArchivo}`);
-    console.log(`🔗 URL: https://storage.googleapis.com/hojas_vida_logyser/${nombreArchivo}`);
+    // Llamar a tu función REAL con datos completos
+    const resultado = await generateAndUploadPdf(datosPrueba);
+
+    if (resultado.success) {
+      console.log(`🎉🎉🎉 ¡PDF REAL GENERADO Y SUBIDO! 🎉🎉🎉`);
+      console.log(`📁 Archivo: ${resultado.fileName}`);
+      console.log(`🔗 URL: ${resultado.url}`);
+      console.log(`📏 Tamaño: ${resultado.size} bytes`);
+    } else {
+      console.error(`❌ Falló: ${resultado.error}`);
+    }
 
   } catch (error) {
-    console.log("⚠️ No se pudo subir (tal vez no hay credenciales):", error.message);
+    console.error("❌ Error en prueba completa:", error.message);
   }
 }
 
-// EJECUTAR INMEDIATAMENTE
-pruebaAutomaticaBucket();
+// Ejecutar inmediatamente al iniciar el backend
+setTimeout(pruebaPDFCompleto, 2000); // Esperar 2 segundos para que todo esté listo
 
 // ==========================================
 //  ENDPOINT: Tipo de Identificación
